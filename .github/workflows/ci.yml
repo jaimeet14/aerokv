@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc-release
+            cxx: g++
+            sanitize: ""
+            build_type: Release
+          - name: clang-release
+            cxx: clang++
+            sanitize: ""
+            build_type: Release
+          - name: asan-ubsan
+            cxx: clang++
+            sanitize: address
+            build_type: RelWithDebInfo
+          - name: tsan
+            cxx: clang++
+            sanitize: thread
+            build_type: RelWithDebInfo
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libsqlite3-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DAEROKV_SANITIZE=${{ matrix.sanitize }}
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: ./build/aerokv_tests --gtest_repeat=3
+      - name: Smoke benchmark
+        if: matrix.sanitize == ''
+        run: ./build/db_bench --num=100000 --reads=20000 --dir=/tmp/aerokv_bench
